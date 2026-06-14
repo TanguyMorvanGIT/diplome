@@ -1,7 +1,7 @@
 {
   "name": "Diplôme",
   "short_name": "Diplôme",
-  "display": "fullscreen",
+  "display": "standalone",
   "orientation": "portrait",
   "background_color": "#000000",
   "theme_color": "#000000",

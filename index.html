@@ -24,7 +24,8 @@
        l'app gym) -> descend jusqu'au bord du bas, dans la zone de l'indicateur
        home, là où 100dvh s'arrête. C'est ça qui supprime la bande noire. */
     #feed {
-      position: fixed; top: 0; left: 0; right: 0; bottom: 0;   /* ancré aux 4 bords comme la navbar gym */
+      position: fixed; top: 0; left: 0; right: 0;
+      height: 100vh;        /* grand viewport iOS = écran physique entier (874), pas 812 */
       overflow-y: scroll;
       scroll-snap-type: y mandatory;
       overscroll-behavior: none;
@@ -34,7 +35,7 @@
     #feed::-webkit-scrollbar { display: none; }
     .slide {
       position: relative;
-      height: 100%; width: 100%;     /* 100% du conteneur ancré = tout l'écran physique */
+      height: 100vh; width: 100%;
       scroll-snap-align: start; scroll-snap-stop: always;
       background: #ff00ff;   /* TEST diagnostic */
       overflow: hidden;
