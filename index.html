@@ -9,21 +9,15 @@
   <title>Diplôme</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    :root { --safe-top: env(safe-area-inset-top, 0px); --safe-bottom: env(safe-area-inset-bottom, 0px); }
-
     html, body {
       height: 100%;
       background: #000;
       overflow: hidden;
-      overscroll-behavior: none;          /* pas de pull-to-refresh / rebond */
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      overscroll-behavior: none;
       -webkit-tap-highlight-color: transparent;
-      -webkit-user-select: none;
-      user-select: none;
-      touch-action: pan-y;
+      -webkit-user-select: none; user-select: none;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     }
-
-    /* Feed vertical plein écran avec accrochage */
     #feed {
       height: 100dvh;
       overflow-y: scroll;
@@ -33,155 +27,62 @@
       -webkit-overflow-scrolling: touch;
     }
     #feed::-webkit-scrollbar { display: none; }
-
     .slide {
-      position: relative;
       height: 100dvh;
       width: 100%;
       scroll-snap-align: start;
       scroll-snap-stop: always;
-      display: flex;
-      align-items: center;
-      justify-content: center;
       background: #000;
     }
     .slide video {
       width: 100%;
       height: 100%;
-      object-fit: contain;       /* vidéo entière, jamais recadrée */
+      object-fit: cover;        /* vraiment plein écran, sans bande noire */
       background: #000;
       display: block;
     }
-
-    /* Icône pause/play qui flashe au tap */
-    #tapIcon {
-      position: fixed;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%) scale(.8);
-      width: 86px; height: 86px;
-      background: rgba(0,0,0,.45);
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      opacity: 0; pointer-events: none;
-      transition: opacity .18s ease, transform .18s ease;
-      z-index: 30;
-    }
-    #tapIcon.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-    #tapIcon svg { width: 40px; height: 40px; fill: #fff; }
-
-    /* Bouton son */
-    #soundBtn {
-      position: fixed;
-      top: calc(var(--safe-top) + 14px);
-      right: 14px;
-      width: 44px; height: 44px;
-      border-radius: 50%;
-      background: rgba(0,0,0,.4);
-      backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px);
-      display: flex; align-items: center; justify-content: center;
-      z-index: 35;
-      border: none;
-      cursor: pointer;
-    }
-    #soundBtn svg { width: 22px; height: 22px; fill: #fff; }
-
-    /* Barre de progression (style iOS, fine, en bas) */
-    #progress {
-      position: fixed;
-      left: 0; right: 0;
-      bottom: calc(var(--safe-bottom) + 8px);
-      height: 3px;
-      margin: 0 12px;
-      background: rgba(255,255,255,.22);
-      border-radius: 3px;
-      overflow: hidden;
-      z-index: 35;
-      opacity: 0;
-      transition: opacity .3s ease;
-    }
-    #progress.show { opacity: 1; }
-    #progress > i {
-      display: block;
-      height: 100%;
-      width: 0%;
-      background: #fff;
-      border-radius: 3px;
-    }
-
-    /* Écran d'accueil : un tap pour débloquer le son */
+    /* Tap de départ : obligatoire pour autoriser le son (règle navigateur) */
     #splash {
       position: fixed; inset: 0; z-index: 50;
       background: #000; color: #fff;
       display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 28px;
-      cursor: pointer;
-      transition: opacity .5s ease;
+      align-items: center; justify-content: center; gap: 26px;
+      transition: opacity .45s ease;
     }
     #splash.hide { opacity: 0; pointer-events: none; }
     #splash .play {
-      width: 88px; height: 88px;
-      border: 2px solid rgba(255,255,255,.85);
-      border-radius: 50%;
+      width: 84px; height: 84px;
+      border: 2px solid rgba(255,255,255,.85); border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
       animation: pulse 2s infinite ease-in-out;
     }
     #splash .play::after {
-      content: "";
-      width: 0; height: 0;
-      border-left: 26px solid #fff;
-      border-top: 16px solid transparent;
-      border-bottom: 16px solid transparent;
+      content: ""; width: 0; height: 0;
+      border-left: 24px solid #fff;
+      border-top: 15px solid transparent; border-bottom: 15px solid transparent;
       margin-left: 6px;
     }
-    #splash p { font-size: 17px; letter-spacing: .3px; opacity: .9; }
-    @keyframes pulse {
-      0%,100% { transform: scale(1); opacity: 1; }
-      50% { transform: scale(1.08); opacity: .75; }
-    }
-
+    #splash p { font-size: 16px; opacity: .85; }
+    @keyframes pulse { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.08);opacity:.75} }
     #empty {
-      position: fixed; inset: 0; z-index: 40;
-      color: #fff; display: none;
+      position: fixed; inset: 0; z-index: 40; color: #fff; display: none;
       align-items: center; justify-content: center; text-align: center;
-      padding: 24px; font-size: 16px; line-height: 1.5; opacity: .85;
+      padding: 24px; line-height: 1.5; opacity: .85;
     }
   </style>
 </head>
 <body>
   <div id="feed"></div>
-
-  <div id="tapIcon"></div>
-
-  <button id="soundBtn" aria-label="Son"></button>
-
-  <div id="progress"><i></i></div>
-
-  <div id="splash">
-    <div class="play"></div>
-    <p>Appuyer pour commencer</p>
-  </div>
-
-  <div id="empty">Aucune vidéo trouvée.<br />Ajoute des fichiers dans le dossier <b>videos/</b>.</div>
+  <div id="splash"><div class="play"></div><p>Appuyer pour commencer</p></div>
+  <div id="empty">Aucune vidéo trouvée dans <b>videos/</b>.</div>
 
   <script>
     const feed = document.getElementById("feed");
     const splash = document.getElementById("splash");
     const emptyMsg = document.getElementById("empty");
-    const tapIcon = document.getElementById("tapIcon");
-    const soundBtn = document.getElementById("soundBtn");
-    const progress = document.getElementById("progress");
-    const progressBar = progress.querySelector("i");
-
-    const ICON_PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
-    const ICON_PAUSE = '<svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
-    const ICON_SOUND_ON = '<svg viewBox="0 0 24 24"><path d="M3 10v4h4l5 5V5L7 10H3zm13.5 2a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1c2.9.9 5 3.6 5 6.7s-2.1 5.8-5 6.7v2.1c4-1 7-4.6 7-8.8s-3-7.8-7-8.8z"/></svg>';
-    const ICON_SOUND_OFF = '<svg viewBox="0 0 24 24"><path d="M16.5 12a4.5 4.5 0 0 0-2.5-4v2.2l2.5 2.5V12zM19 12c0 .9-.2 1.8-.5 2.6l1.5 1.5A8.8 8.8 0 0 0 21 12c0-4.2-3-7.8-7-8.8v2.1c2.9.9 5 3.6 5 6.7zM4.3 3 3 4.3 7.7 9H3v6h4l5 5v-6.7l4.3 4.3c-.7.5-1.4.9-2.3 1.2v2.1c1.4-.3 2.7-1 3.8-1.8L19.7 21 21 19.7 4.3 3zM12 4 9.9 6.1 12 8.2V4z"/></svg>';
 
     let videos = [];
     let started = false;
-    let muted = true;
-    let userPaused = false;
     let current = 0;
 
     async function loadManifest() {
@@ -196,149 +97,83 @@
       list.forEach((src, i) => {
         const slide = document.createElement("div");
         slide.className = "slide";
-
         const v = document.createElement("video");
-        v.dataset.src = src;          // src réelle, posée seulement quand nécessaire
+        v.dataset.src = src;
         v.dataset.index = i;
-        v.loop = true;                // chaque vidéo boucle sur elle-même (pas d'auto-scroll)
+        v.loop = true;             // chaque vidéo boucle sur elle-même
         v.muted = true;
         v.playsInline = true;
         v.setAttribute("playsinline", "");
         v.setAttribute("webkit-playsinline", "");
-        v.preload = "metadata";
-
-        v.addEventListener("timeupdate", () => {
-          if (Number(v.dataset.index) !== current) return;
-          if (v.duration) progressBar.style.width = (v.currentTime / v.duration * 100) + "%";
-        });
-
+        v.preload = "auto";
         slide.appendChild(v);
         feed.appendChild(slide);
         videos.push(v);
       });
     }
 
-    // Fenêtrage : ne garder chargées que la vidéo courante + voisines.
-    // C'est ce qui évite les écrans noirs (limite de décodeurs sur mobile).
+    // Ne garde chargées que la vidéo courante + les voisines.
+    // Indispensable : un iPhone ne décode que quelques vidéos à la fois
+    // (au-delà -> écran noir). On libère les autres.
     function setWindow(index) {
       videos.forEach((v, i) => {
-        const inWindow = Math.abs(i - index) <= 1;
-        if (inWindow && !v.src) {
-          v.src = v.dataset.src;
-          v.load();
-        } else if (!inWindow && v.src) {
-          v.removeAttribute("src");
-          v.load();
-        }
+        const near = Math.abs(i - index) <= 1;
+        if (near && !v.src) { v.src = v.dataset.src; v.load(); }
+        else if (!near && v.src) { v.removeAttribute("src"); v.load(); }
       });
     }
 
-    function activate(index) {
-      if (index < 0 || index >= videos.length) return;
+    function ensurePlay(v) {
+      const go = () => { const p = v.play(); if (p) p.catch(() => {}); };
+      if (v.readyState >= 2) go();
+      else v.addEventListener("loadeddata", go, { once: true });
+    }
+
+    function setActive(index) {
+      if (index === current && videos[index] && videos[index].src) return;
       current = index;
-      userPaused = false;
       setWindow(index);
       videos.forEach((v, i) => {
         if (i === index) {
-          v.muted = muted;
-          const p = v.play();
-          if (p) p.catch(() => {});
+          v.muted = !started;
+          if (started) ensurePlay(v);
         } else {
           v.pause();
-          if (v.src) v.currentTime = 0;
         }
       });
-      progress.classList.toggle("show", started);
     }
 
-    // Vidéo active = celle alignée avec le scroll (fiable même en scroll rapide)
-    let rafPending = false;
-    function onScroll() {
-      if (rafPending) return;
-      rafPending = true;
-      requestAnimationFrame(() => {
-        rafPending = false;
-        const h = feed.clientHeight;
-        let idx = Math.round(feed.scrollTop / h);
-        idx = Math.max(0, Math.min(videos.length - 1, idx));
-        if (idx !== current) activate(idx);
-      });
+    // Détecte la vidéo visible et la lance (fiable sur iOS)
+    function setupObserver() {
+      const io = new IntersectionObserver((entries) => {
+        let best = null;
+        entries.forEach((e) => {
+          if (e.isIntersecting && (!best || e.intersectionRatio > best.intersectionRatio)) best = e;
+        });
+        if (best && best.intersectionRatio >= 0.55) {
+          setActive(Number(best.target.firstChild.dataset.index));
+        }
+      }, { threshold: [0.55, 0.8] });
+      document.querySelectorAll(".slide").forEach((s) => io.observe(s));
     }
-    feed.addEventListener("scroll", onScroll, { passive: true });
-
-    // Boucle infinie déclenchée par l'utilisateur :
-    // swipe vers le haut sur la dernière -> première ; swipe vers le bas sur la première -> dernière.
-    let touchStartY = null;
-    feed.addEventListener("touchstart", (e) => { touchStartY = e.touches[0].clientY; }, { passive: true });
-    feed.addEventListener("touchend", (e) => {
-      if (touchStartY === null) return;
-      const dy = e.changedTouches[0].clientY - touchStartY;
-      touchStartY = null;
-      const atBottom = feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 2;
-      const atTop = feed.scrollTop <= 2;
-      if (current === videos.length - 1 && atBottom && dy < -60) {
-        feed.scrollTo({ top: 0 });
-        activate(0);
-      } else if (current === 0 && atTop && dy > 60) {
-        feed.scrollTo({ top: (videos.length - 1) * feed.clientHeight });
-        activate(videos.length - 1);
-      }
-    }, { passive: true });
-
-    // Tap pour mettre en pause / reprendre la vidéo courante
-    function flashIcon(html) {
-      tapIcon.innerHTML = html;
-      tapIcon.classList.add("show");
-      clearTimeout(flashIcon._t);
-      flashIcon._t = setTimeout(() => tapIcon.classList.remove("show"), 500);
-    }
-    feed.addEventListener("click", () => {
-      if (!started) return;
-      const v = videos[current];
-      if (!v) return;
-      if (v.paused) {
-        v.play().catch(() => {});
-        userPaused = false;
-        flashIcon(ICON_PLAY);
-      } else {
-        v.pause();
-        userPaused = true;
-        flashIcon(ICON_PAUSE);
-      }
-    });
-
-    // Bouton son
-    function refreshSoundBtn() { soundBtn.innerHTML = muted ? ICON_SOUND_OFF : ICON_SOUND_ON; }
-    soundBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      muted = !muted;
-      const v = videos[current];
-      if (v) v.muted = muted;
-      refreshSoundBtn();
-    });
 
     function start() {
       if (started) return;
       started = true;
-      muted = false;
-      refreshSoundBtn();
       splash.classList.add("hide");
-      activate(current);
+      setWindow(current);
+      const v = videos[current];
+      if (v) { v.muted = false; ensurePlay(v); }
     }
     splash.addEventListener("click", start);
+    splash.addEventListener("touchend", start, { passive: true });
 
     (async function init() {
       const list = await loadManifest();
-      if (!list.length) {
-        splash.style.display = "none";
-        emptyMsg.style.display = "flex";
-        return;
-      }
-      refreshSoundBtn();
+      if (!list.length) { splash.style.display = "none"; emptyMsg.style.display = "flex"; return; }
       buildFeed(list);
-      // Charge la 1re et affiche son image fixe en attendant le tap
+      setupObserver();
       setWindow(0);
-      videos[0].addEventListener("loadeddata", () => { videos[0].currentTime = 0; }, { once: true });
     })();
   </script>
 </body>
