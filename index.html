@@ -123,6 +123,11 @@
     const loadbar = document.querySelector("#loadbar > i");
     const loadtext = document.getElementById("loadtext");
 
+    // Version des fichiers média : change cette valeur à chaque remplacement de
+    // vidéos pour forcer le re-téléchargement (contourne tout cache).
+    const ASSET_V = "hq1";
+    function bust(u) { return u + (u.indexOf("?") >= 0 ? "&" : "?") + "av=" + ASSET_V; }
+
     let slides = [];         // vraies slides : { el, poster }
     let srcs = [];           // URL finale de chaque vidéo (blob si préchargée)
     let N = 0;
@@ -174,7 +179,7 @@
     function makePoster(src) {
       const p = document.createElement("div");
       p.className = "poster";
-      p.style.backgroundImage = "url('" + posterUrl(src) + "')";
+      p.style.backgroundImage = "url('" + bust(posterUrl(src)) + "')";
       return p;
     }
 
@@ -195,7 +200,7 @@
         slide.appendChild(poster);
         feed.appendChild(slide);
         slides.push({ el: slide, poster: poster });
-        srcs[i] = src;
+        srcs[i] = bust(src);
       });
 
       const botClone = document.createElement("div");
@@ -207,11 +212,11 @@
 
     async function preloadAll(list) {
       await Promise.all(list.map((src) => new Promise((res) => {
-        const img = new Image(); img.onload = img.onerror = res; img.src = posterUrl(src);
+        const img = new Image(); img.onload = img.onerror = res; img.src = bust(posterUrl(src));
       })));
       for (let i = 0; i < list.length; i++) {
         try {
-          const r = await fetch(list[i], { cache: "force-cache" });
+          const r = await fetch(bust(list[i]), { cache: "reload" });
           srcs[i] = URL.createObjectURL(await r.blob());
         } catch (e) {}
         const pct = Math.round((i + 1) / list.length * 100);
