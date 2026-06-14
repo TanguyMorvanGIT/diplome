@@ -103,6 +103,8 @@
 <body>
   <div id="feed"></div>
   <button id="updateBtn">↻ Mise à jour</button>
+  <div id="dbg" style="position:fixed;left:8px;bottom:8px;z-index:9999;background:rgba(0,0,0,.8);color:#0f0;font:12px monospace;padding:8px;border-radius:6px;white-space:pre;pointer-events:none"></div>
+  <div id="probe" style="position:fixed;bottom:0;height:env(safe-area-inset-bottom,0px);width:1px;"></div>
 
   <div id="splash" class="loading">
     <div class="play"></div>
@@ -116,6 +118,25 @@
   <div id="empty">Aucune vidéo trouvée dans <b>videos/</b>.</div>
 
   <script>
+    // DEBUG : affiche les vraies dimensions de l'iPhone
+    (function debug() {
+      const d = document.getElementById("dbg");
+      function up() {
+        const probe = document.getElementById("probe");
+        const f = document.getElementById("feed");
+        const vv = window.visualViewport;
+        d.textContent =
+          "innerH=" + window.innerHeight +
+          "\nscreenH=" + screen.height +
+          "\nvisualVP=" + (vv ? Math.round(vv.height) : "?") +
+          "\nsafe-bottom=" + getComputedStyle(probe).height +
+          "\nfeedH=" + f.getBoundingClientRect().height +
+          "\ndpr=" + window.devicePixelRatio +
+          "\nstandalone=" + (navigator.standalone === true);
+      }
+      up(); setInterval(up, 500);
+    })();
+
     const feed = document.getElementById("feed");
     const splash = document.getElementById("splash");
     const emptyMsg = document.getElementById("empty");
