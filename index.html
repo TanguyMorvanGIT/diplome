@@ -65,15 +65,10 @@
     }
     #splash p { font-size: 16px; opacity: .85; }
     @keyframes pulse { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.08);opacity:.75} }
-
-    /* État chargement : on masque le bouton "play", on montre la barre */
     #splash.loading .play, #splash.loading .ready-text { display: none; }
     #splash:not(.loading) .loadwrap { display: none; }
     .loadwrap { display: flex; flex-direction: column; align-items: center; gap: 16px; }
-    #loadbar {
-      width: 200px; height: 4px; border-radius: 4px;
-      background: rgba(255,255,255,.2); overflow: hidden;
-    }
+    #loadbar { width: 200px; height: 4px; border-radius: 4px; background: rgba(255,255,255,.2); overflow: hidden; }
     #loadbar > i { display: block; height: 100%; width: 0%; background: #fff; transition: width .2s ease; }
 
     #empty {
@@ -120,9 +115,8 @@
 
     let videos = [];
     let started = false;
-    let ready = false;     // true quand TOUT est téléchargé
+    let ready = false;
     let current = 0;
-    const WINDOW = 1;      // voisines dont on pré-décode la 1re image
 
     async function loadManifest() {
       try {
@@ -151,36 +145,52 @@
       });
     }
 
-    // Télécharge TOUTES les vidéos en mémoire (blob) avant de commencer.
-    // Une fois fait : plus aucun accès réseau, lecture instantanée toute la soirée.
-    async function preloadAll(list) {
-      let done = 0;
-      const urls = new Array(list.length);
-      await Promise.all(list.map(async (src, i) => {
-        try {
-          const res = await fetch(src, { cache: "force-cache" });
-          const blob = await res.blob();
-          urls[i] = URL.createObjectURL(blob);
-        } catch (e) {
-          urls[i] = src; // repli : lecture directe si le téléchargement échoue
-        }
-        done++;
-        const pct = Math.round(done / list.length * 100);
-        loadbar.style.width = pct + "%";
-        loadtext.textContent = "Préparation… " + pct + "%";
-      }));
-      // Toutes les sources sont locales : on les assigne toutes (aucun coût réseau)
-      videos.forEach((v, i) => { v.src = urls[i]; v.load(); });
+    function once(el, ev, timeout) {
+      return new Promise((resolve) => {
+        let done = false;
+        const h = () => { if (done) return; done = true; el.removeEventListener(ev, h); resolve(); };
+        el.addEventListener(ev, h);
+        if (timeout) setTimeout(h, timeout);
+      });
     }
 
-    // Pré-décode la 1re image (lecture muette puis pause) -> aucune "seconde de noir"
-    function prime(v) {
-      if (v._primed || !v.src) return;
-      v._primed = true;
-      v.muted = true;
-      const p = v.play();
-      if (p) p.then(() => { if (Number(v.dataset.index) !== current) v.pause(); })
-             .catch(() => { v.addEventListener("loadeddata", () => { try { v.currentTime = 0.01; } catch (e) {} }, { once: true }); });
+    // Préparation (derrière l'écran d'accueil), UNE vidéo à la fois pour ne pas
+    // saturer le décodeur de l'iPhone :
+    //  1) télécharge la vidéo en entier (blob, en mémoire)
+    //  2) capture sa 1re image et la fixe comme POSTER
+    // -> au scroll, le poster s'affiche instantanément à la place du noir,
+    //    et comme c'est la 1re image exacte, la transition est invisible.
+    async function prepareAll(list) {
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      for (let i = 0; i < list.length; i++) {
+        const v = videos[i];
+        let url;
+        try {
+          const r = await fetch(list[i], { cache: "force-cache" });
+          url = URL.createObjectURL(await r.blob());
+        } catch (e) { url = list[i]; }
+
+        v.src = url;
+        v.load();
+        await once(v, "loadeddata", 4000);
+        try {
+          v.currentTime = 0.05;
+          await once(v, "seeked", 1500);
+          if (v.videoWidth) {
+            canvas.width = v.videoWidth;
+            canvas.height = v.videoHeight;
+            ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+            v.poster = canvas.toDataURL("image/jpeg", 0.85);
+          }
+          v.currentTime = 0;
+        } catch (e) {}
+        v.pause();
+
+        const pct = Math.round((i + 1) / list.length * 100);
+        loadbar.style.width = pct + "%";
+        loadtext.textContent = "Préparation… " + pct + "%";
+      }
     }
 
     function ensurePlay(v) {
@@ -190,10 +200,10 @@
     }
 
     function setActive(index) {
+      if (index === current && started && !videos[index].paused) return;
       const changed = index !== current;
       current = index;
       videos.forEach((v, i) => {
-        if (Math.abs(i - index) <= WINDOW) prime(v);   // 1re image prête sur les voisines
         if (i === index) {
           v.muted = !started;
           if (started) ensurePlay(v);
@@ -238,10 +248,9 @@
       if (!list.length) { splash.style.display = "none"; emptyMsg.style.display = "flex"; return; }
       buildFeed(list);
       setupObserver();
-      await preloadAll(list);     // <-- tout charger avant de pouvoir commencer
-      prime(videos[0]);           // 1re image affichée derrière l'écran d'accueil
+      await prepareAll(list);     // tout télécharger + capturer les posters
       ready = true;
-      splash.classList.remove("loading");   // affiche "Appuyer pour commencer"
+      splash.classList.remove("loading");
     })();
   </script>
 </body>
