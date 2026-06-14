@@ -123,18 +123,17 @@
     (function debug() {
       const d = document.getElementById("dbg");
       function up() {
-        const f = document.getElementById("feed");
-        const slide = f.querySelector(".slide");
         const pl = document.getElementById("player");
-        const r = (e) => e ? Math.round(e.getBoundingClientRect().bottom) : "?";
+        const par = pl ? pl.parentElement : null;
+        const rb = (e) => e ? Math.round(e.getBoundingClientRect().bottom) : "?";
+        const rt = (e) => e ? Math.round(e.getBoundingClientRect().top) : "?";
         d.textContent =
-          "innerH=" + window.innerHeight +
-          " screenH=" + screen.height +
-          "\nfeed.bottom=" + r(f) +
-          "\nslide.bottom=" + r(slide) +
-          "\nplayer.bottom=" + (pl ? r(pl) : "no-player") +
-          "\nplayer.parent=" + (pl && pl.parentElement ? (pl.parentElement.dataset.index ?? pl.parentElement.className) : "?") +
-          "\nstandalone=" + (navigator.standalone === true);
+          "screenH=" + screen.height + " innerH=" + window.innerHeight +
+          "\nplayer top=" + rt(pl) + " bottom=" + rb(pl) +
+          "\nactiveSlide top=" + rt(par) + " bottom=" + rb(par) +
+          "\nobject-fit=" + (pl ? getComputedStyle(pl).objectFit : "?") +
+          "\nvideo=" + (pl ? pl.videoWidth + "x" + pl.videoHeight : "?") +
+          "\npaused=" + (pl ? pl.paused : "?");
       }
       up(); setInterval(up, 500);
     })();
