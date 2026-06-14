@@ -46,12 +46,11 @@
       object-fit: cover;
     }
     .slide video { z-index: 1; background: transparent; display: block; }
-    /* Vraie vignette (1re image du fichier) AU-DESSUS de la vidéo tant qu'elle ne
-       joue pas -> jamais de noir. Disparait pile quand la vidéo démarre. */
+    /* Vraie 1re image AU-DESSUS de la vidéo tant qu'elle n'affiche pas d'image.
+       Disparition INSTANTANÉE pile quand la vidéo rend sa 1re image -> aucun noir. */
     .slide .poster {
       z-index: 2;
       background-position: center; background-size: cover; background-repeat: no-repeat;
-      transition: opacity .2s ease;
     }
     .slide .poster.hidden { opacity: 0; }
 
@@ -126,11 +125,13 @@
     const loadtext = document.getElementById("loadtext");
 
     const WINDOW = 1;        // vidéos chargées de chaque côté (max 3 -> limite iPhone)
-    let slides = [];         // { video, poster }
+    let slides = [];         // vraies slides : { video, poster }
     let srcs = [];           // URL finale de chaque vidéo (blob si préchargée)
+    let N = 0;
     let started = false;
     let ready = false;
     let current = 0;
+    let teleporting = false;
 
     async function loadManifest() {
       try {
@@ -141,14 +142,33 @@
     }
 
     function posterUrl(src) {
-      // videos/01_video.mp4 -> posters/01.jpg
       return src.replace("videos/", "posters/").replace(/_video\.mp4$/i, ".jpg");
     }
 
+    function H() { return feed.clientHeight; }
+
+    function makePoster(src) {
+      const p = document.createElement("div");
+      p.className = "poster";
+      p.style.backgroundImage = "url('" + posterUrl(src) + "')";
+      return p;
+    }
+
     function buildFeed(list) {
+      N = list.length;
+
+      // Clone du HAUT = dernière vidéo (pour boucler vers le bas en remontant)
+      const topClone = document.createElement("div");
+      topClone.className = "slide";
+      topClone.dataset.clone = "top";
+      topClone.appendChild(makePoster(list[N - 1]));
+      feed.appendChild(topClone);
+
+      // Vraies slides
       list.forEach((src, i) => {
         const slide = document.createElement("div");
         slide.className = "slide";
+        slide.dataset.index = i;
 
         const v = document.createElement("video");
         v.dataset.index = i;
@@ -160,53 +180,77 @@
         v.setAttribute("muted", "");
         v.preload = "none";
 
-        const poster = document.createElement("div");
-        poster.className = "poster";
-        poster.style.backgroundImage = "url('" + posterUrl(src) + "')";
+        const poster = makePoster(src);
 
-        // La vidéo joue -> on cache la vignette. Sinon la vignette reste -> jamais de noir.
-        v.addEventListener("playing", () => poster.classList.add("hidden"));
-        v.addEventListener("pause", () => poster.classList.remove("hidden"));
-        v.addEventListener("waiting", () => poster.classList.remove("hidden"));
+        // Réaffiche la vignette dès que la vidéo n'a pas d'image stable
+        // (pause, mise en mémoire tampon, ET la boucle qui repart -> 'seeking')
+        const show = () => poster.classList.remove("hidden");
+        v.addEventListener("pause", show);
+        v.addEventListener("waiting", show);
+        v.addEventListener("seeking", show);
+        // Cache la vignette PILE quand une vraie image est rendue à l'écran
+        if ("requestVideoFrameCallback" in HTMLVideoElement.prototype) {
+          const onFrame = () => { if (!v.paused) poster.classList.add("hidden"); v.requestVideoFrameCallback(onFrame); };
+          v.requestVideoFrameCallback(onFrame);
+        } else {
+          v.addEventListener("timeupdate", () => { if (!v.paused && v.currentTime > 0.02) poster.classList.add("hidden"); });
+        }
 
         slide.appendChild(v);
         slide.appendChild(poster);
         feed.appendChild(slide);
         slides.push({ video: v, poster: poster });
-        srcs[i] = src;        // par défaut : URL réseau (sera remplacée par le blob)
+        srcs[i] = src;
       });
+
+      // Clone du BAS = première vidéo (pour boucler 8 -> 1)
+      const botClone = document.createElement("div");
+      botClone.className = "slide";
+      botClone.dataset.clone = "bottom";
+      botClone.appendChild(makePoster(list[0]));
+      feed.appendChild(botClone);
     }
 
-    // Précharge en mémoire : vignettes (instantanées) + vidéos entières (lecture
-    // 100% locale ensuite, aucun risque de coupure réseau pendant l'expo).
     async function preloadAll(list) {
-      // vignettes d'abord (toutes petites)
       await Promise.all(list.map((src) => new Promise((res) => {
         const img = new Image(); img.onload = img.onerror = res; img.src = posterUrl(src);
       })));
-      // puis les vidéos, une par une, avec progression
       for (let i = 0; i < list.length; i++) {
         try {
           const r = await fetch(list[i], { cache: "force-cache" });
           srcs[i] = URL.createObjectURL(await r.blob());
-        } catch (e) { /* on garde l'URL réseau en repli */ }
+        } catch (e) {}
         const pct = Math.round((i + 1) / list.length * 100);
         loadbar.style.width = pct + "%";
         loadtext.textContent = "Préparation… " + pct + "%";
       }
     }
 
-    // Seules current ± WINDOW vidéos gardent leur source (limite iPhone respectée)
+    // Pré-décode la 1re image (lecture muette puis pause) -> démarrage instantané,
+    // même pour les grosses vidéos (7 et 8).
+    function prime(v) {
+      if (v._primed || !v.src) return;
+      v._primed = true;
+      const run = () => {
+        v.muted = true;
+        const p = v.play();
+        if (p) p.then(() => { if (!(started && v === slides[current].video)) v.pause(); }).catch(() => {});
+      };
+      if (v.readyState >= 2) run();
+      else v.addEventListener("loadeddata", run, { once: true });
+    }
+
     function setWindow(index) {
       slides.forEach((s, i) => {
         const near = Math.abs(i - index) <= WINDOW;
-        if (near && !s.video.src) {
-          s.video.src = srcs[i];
-          s.video.load();
-        } else if (!near && s.video.src) {
+        if (near) {
+          if (!s.video.src) { s.video.preload = "auto"; s.video.src = srcs[i]; s.video.load(); }
+          prime(s.video);
+        } else if (s.video.src) {
           s.video.pause();
           s.video.removeAttribute("src");
           s.video.load();
+          s.video._primed = false;
           s.poster.classList.remove("hidden");
         }
       });
@@ -220,7 +264,7 @@
     }
 
     function setActive(index) {
-      if (index === current) return;
+      if (index === current) { if (started && slides[index].video.paused) playActive(); return; }
       const prev = slides[current].video;
       prev.pause();
       try { prev.currentTime = 0; } catch (e) {}
@@ -235,17 +279,31 @@
       }
     }
 
+    // Téléport instantané pour la boucle infinie (les clones sont identiques aux
+    // vignettes des vraies vidéos -> le saut est invisible).
+    function goToReal(index) {
+      teleporting = true;
+      feed.scrollTop = (index + 1) * H();   // +1 car le clone du haut occupe la position 0
+      setActive(index);
+      requestAnimationFrame(() => { teleporting = false; });
+    }
+
     function setupObserver() {
       const io = new IntersectionObserver((entries) => {
+        if (teleporting) return;
         let best = null;
         entries.forEach((e) => {
           if (e.isIntersecting && (!best || e.intersectionRatio > best.intersectionRatio)) best = e;
         });
-        if (best && best.intersectionRatio >= 0.5) {
-          setActive(Number(best.target.querySelector("video").dataset.index));
+        if (!best) return;
+        const t = best.target;
+        if (t.dataset.clone === "bottom" && best.intersectionRatio >= 0.9) { goToReal(0); return; }
+        if (t.dataset.clone === "top" && best.intersectionRatio >= 0.9) { goToReal(N - 1); return; }
+        if (t.dataset.index !== undefined && best.intersectionRatio >= 0.5) {
+          setActive(Number(t.dataset.index));
         }
-      }, { threshold: [0.5, 0.9] });
-      slides.forEach((s) => io.observe(s.video.parentElement));
+      }, { threshold: [0.5, 0.9, 0.99] });
+      document.querySelectorAll(".slide").forEach((s) => io.observe(s));
     }
 
     function start() {
@@ -260,7 +318,6 @@
     splash.addEventListener("click", start);
     splash.addEventListener("touchend", start, { passive: true });
 
-    // TEMPORAIRE : force le rechargement de la dernière version (contourne le cache)
     document.getElementById("updateBtn").addEventListener("click", (e) => {
       e.stopPropagation();
       if ("caches" in window) { caches.keys().then((k) => k.forEach((n) => caches.delete(n))); }
@@ -271,6 +328,8 @@
       const list = await loadManifest();
       if (!list.length) { splash.style.display = "none"; emptyMsg.style.display = "flex"; return; }
       buildFeed(list);
+      // place le scroll sur la 1re vraie vidéo (après le clone du haut)
+      requestAnimationFrame(() => { feed.scrollTop = H(); });
       setupObserver();
       await preloadAll(list);
       setWindow(0);
