@@ -24,7 +24,10 @@
        l'app gym) -> descend jusqu'au bord du bas, dans la zone de l'indicateur
        home, là où 100dvh s'arrête. C'est ça qui supprime la bande noire. */
     #feed {
-      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      position: fixed; top: 0; left: 0; right: 0;
+      /* hauteur = écran + safe-area du bas : le conteneur lui-même déborde dans
+         la zone de l'indicateur home (sinon il rogne la vidéo qui dépasse) */
+      height: calc(100% + env(safe-area-inset-bottom, 0px));
       overflow-y: scroll;
       scroll-snap-type: y mandatory;
       overscroll-behavior: none;
