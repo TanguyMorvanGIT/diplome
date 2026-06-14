@@ -226,31 +226,17 @@
       }
     }
 
-    // Pré-décode la 1re image (lecture muette puis pause) -> démarrage instantané,
-    // même pour les grosses vidéos (7 et 8).
-    function prime(v) {
-      if (v._primed || !v.src) return;
-      v._primed = true;
-      const run = () => {
-        v.muted = true;
-        const p = v.play();
-        if (p) p.then(() => { if (!(started && v === slides[current].video)) v.pause(); }).catch(() => {});
-      };
-      if (v.readyState >= 2) run();
-      else v.addEventListener("loadeddata", run, { once: true });
-    }
-
     function setWindow(index) {
       slides.forEach((s, i) => {
         const near = Math.abs(i - index) <= WINDOW;
-        if (near) {
-          if (!s.video.src) { s.video.preload = "auto"; s.video.src = srcs[i]; s.video.load(); }
-          prime(s.video);
-        } else if (s.video.src) {
+        if (near && !s.video.src) {
+          s.video.preload = "auto";
+          s.video.src = srcs[i];
+          s.video.load();
+        } else if (!near && s.video.src) {
           s.video.pause();
           s.video.removeAttribute("src");
           s.video.load();
-          s.video._primed = false;
           s.poster.classList.remove("hidden");
         }
       });
