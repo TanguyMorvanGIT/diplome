@@ -4,8 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="theme-color" content="#000000" />
+  <link rel="manifest" href="manifest.json" />
   <title>Diplôme</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -19,6 +21,7 @@
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     }
     #feed {
+      position: fixed; inset: 0;     /* couvre tout l'écran, jusqu'aux bords */
       height: 100dvh;
       overflow-y: scroll;
       scroll-snap-type: y mandatory;
@@ -34,20 +37,24 @@
       scroll-snap-stop: always;
       background: #000;
     }
+    /* En mode app ajoutée à l'écran d'accueil : remplir TOUT l'écran
+       (y compris la zone de l'indicateur home en bas) */
+    @media all and (display-mode: standalone), all and (display-mode: fullscreen) {
+      #feed, .slide { height: 100vh; }
+    }
     .slide video {
       width: 100%;
       height: 100%;
-      object-fit: cover;        /* vraiment plein écran, sans bande noire */
+      object-fit: cover;
       background: #000;
       display: block;
     }
-    /* Tap de départ : obligatoire pour autoriser le son (règle navigateur) */
     #splash {
       position: fixed; inset: 0; z-index: 50;
       background: #000; color: #fff;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center; gap: 26px;
-      transition: opacity .45s ease;
+      transition: opacity .4s ease;
     }
     #splash.hide { opacity: 0; pointer-events: none; }
     #splash .play {
@@ -84,6 +91,7 @@
     let videos = [];
     let started = false;
     let current = 0;
+    const WINDOW = 2;   // vidéos gardées chargées de chaque côté
 
     async function loadManifest() {
       try {
@@ -100,11 +108,13 @@
         const v = document.createElement("video");
         v.dataset.src = src;
         v.dataset.index = i;
-        v.loop = true;             // chaque vidéo boucle sur elle-même
+        v.loop = true;
         v.muted = true;
+        v.defaultMuted = true;
         v.playsInline = true;
         v.setAttribute("playsinline", "");
         v.setAttribute("webkit-playsinline", "");
+        v.setAttribute("muted", "");
         v.preload = "auto";
         slide.appendChild(v);
         feed.appendChild(slide);
@@ -112,14 +122,29 @@
       });
     }
 
-    // Ne garde chargées que la vidéo courante + les voisines.
-    // Indispensable : un iPhone ne décode que quelques vidéos à la fois
-    // (au-delà -> écran noir). On libère les autres.
+    // Pré-décode la 1re image : on lance en muet puis on met en pause.
+    // Résultat : la vidéo affiche déjà son image quand on arrive dessus
+    // -> aucune "seconde de noir", transition instantanée façon TikTok.
+    function prime(v) {
+      if (v._primed || !v.src) return;
+      v._primed = true;
+      v.muted = true;
+      const p = v.play();
+      if (p) p.then(() => { if (Number(v.dataset.index) !== current) v.pause(); })
+             .catch(() => { v.addEventListener("loadeddata", () => { try { v.currentTime = 0.01; } catch (e) {} }, { once: true }); });
+    }
+
+    // Ne garde chargées que la vidéo courante + WINDOW voisines (anti écran noir),
+    // et pré-décode leur 1re image.
     function setWindow(index) {
       videos.forEach((v, i) => {
-        const near = Math.abs(i - index) <= 1;
-        if (near && !v.src) { v.src = v.dataset.src; v.load(); }
-        else if (!near && v.src) { v.removeAttribute("src"); v.load(); }
+        const near = Math.abs(i - index) <= WINDOW;
+        if (near) {
+          if (!v.src) { v.src = v.dataset.src; v._primed = false; v.load(); }
+          prime(v);
+        } else if (v.src) {
+          v.removeAttribute("src"); v._primed = false; v.load();
+        }
       });
     }
 
@@ -130,20 +155,19 @@
     }
 
     function setActive(index) {
-      if (index === current && videos[index] && videos[index].src) return;
+      const changed = index !== current;
       current = index;
       setWindow(index);
       videos.forEach((v, i) => {
         if (i === index) {
           v.muted = !started;
           if (started) ensurePlay(v);
-        } else {
+        } else if (changed) {
           v.pause();
         }
       });
     }
 
-    // Détecte la vidéo visible et la lance (fiable sur iOS)
     function setupObserver() {
       const io = new IntersectionObserver((entries) => {
         let best = null;
@@ -153,7 +177,7 @@
         if (best && best.intersectionRatio >= 0.55) {
           setActive(Number(best.target.firstChild.dataset.index));
         }
-      }, { threshold: [0.55, 0.8] });
+      }, { threshold: [0.55, 0.9] });
       document.querySelectorAll(".slide").forEach((s) => io.observe(s));
     }
 
