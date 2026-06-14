@@ -1,6 +1,8 @@
 # Diplôme — feed vidéo (style TikTok minimal)
 
-Site statique : scroll vertical plein écran, son automatique après un tap, boucle infinie (après la dernière vidéo, retour à la première).
+Site statique pensé mobile (iPhone) : scroll vertical plein écran contrôlé par l'utilisateur (pas d'auto-scroll), son après un tap, chaque vidéo boucle sur elle-même. Boucle infinie : swipe vers le haut sur la dernière vidéo = retour à la première.
+
+Interactions : tap pour pause/lecture, bouton son en haut à droite, barre de progression, gestion du notch (safe-area), anti pull-to-refresh, fenêtrage des vidéos pour éviter les écrans noirs.
 
 ## Ajouter / changer des vidéos
 1. Dépose tes fichiers `.mp4` dans le dossier `videos/`
