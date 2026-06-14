@@ -40,14 +40,13 @@
     @media all and (display-mode: standalone), all and (display-mode: fullscreen) {
       #feed, .slide { height: 100vh; }
     }
-    .slide video, .slide .poster {
+    .slide .poster, #player {
       position: absolute; inset: 0;
       width: 100%; height: 100%;
       object-fit: cover;
     }
-    .slide video { z-index: 1; background: transparent; display: block; }
-    /* Vraie 1re image AU-DESSUS de la vidéo tant qu'elle n'affiche pas d'image.
-       Disparition INSTANTANÉE pile quand la vidéo rend sa 1re image -> aucun noir. */
+    /* UNE seule vidéo, déplacée sur la slide active, sous la vignette */
+    #player { z-index: 1; background: transparent; display: block; }
     .slide .poster {
       z-index: 2;
       background-position: center; background-size: cover; background-repeat: no-repeat;
@@ -124,14 +123,41 @@
     const loadbar = document.querySelector("#loadbar > i");
     const loadtext = document.getElementById("loadtext");
 
-    const WINDOW = 1;        // vidéos chargées de chaque côté (max 3 -> limite iPhone)
-    let slides = [];         // vraies slides : { video, poster }
+    let slides = [];         // vraies slides : { el, poster }
     let srcs = [];           // URL finale de chaque vidéo (blob si préchargée)
     let N = 0;
     let started = false;
     let ready = false;
     let current = 0;
     let teleporting = false;
+
+    // L'UNIQUE élément vidéo, réutilisé pour tout le feed -> iOS ne peut jamais
+    // dépasser sa limite (il n'y a qu'une seule vidéo en mémoire).
+    const player = document.createElement("video");
+    player.id = "player";
+    player.loop = true;
+    player.muted = true; player.defaultMuted = true;
+    player.playsInline = true;
+    player.preload = "auto";
+    player.setAttribute("playsinline", "");
+    player.setAttribute("webkit-playsinline", "");
+    player.setAttribute("muted", "");
+
+    function showCurrentPoster() { if (slides[current]) slides[current].poster.classList.remove("hidden"); }
+    function hideCurrentPoster() { if (slides[current]) slides[current].poster.classList.add("hidden"); }
+
+    // La vignette se réaffiche dès que la vidéo n'a pas d'image stable
+    player.addEventListener("pause", showCurrentPoster);
+    player.addEventListener("waiting", showCurrentPoster);
+    player.addEventListener("seeking", showCurrentPoster);   // boucle qui repart -> pas de noir
+    player.addEventListener("emptied", showCurrentPoster);
+    // Cache la vignette PILE quand une vraie image est rendue
+    if ("requestVideoFrameCallback" in HTMLVideoElement.prototype) {
+      const onFrame = () => { if (!player.paused) hideCurrentPoster(); player.requestVideoFrameCallback(onFrame); };
+      player.requestVideoFrameCallback(onFrame);
+    } else {
+      player.addEventListener("timeupdate", () => { if (!player.paused && player.currentTime > 0.02) hideCurrentPoster(); });
+    }
 
     async function loadManifest() {
       try {
@@ -144,9 +170,7 @@
     function posterUrl(src) {
       return src.replace("videos/", "posters/").replace(/_video\.mp4$/i, ".jpg");
     }
-
     function H() { return feed.clientHeight; }
-
     function makePoster(src) {
       const p = document.createElement("div");
       p.className = "poster";
@@ -157,53 +181,23 @@
     function buildFeed(list) {
       N = list.length;
 
-      // Clone du HAUT = dernière vidéo (pour boucler vers le bas en remontant)
       const topClone = document.createElement("div");
       topClone.className = "slide";
       topClone.dataset.clone = "top";
       topClone.appendChild(makePoster(list[N - 1]));
       feed.appendChild(topClone);
 
-      // Vraies slides
       list.forEach((src, i) => {
         const slide = document.createElement("div");
         slide.className = "slide";
         slide.dataset.index = i;
-
-        const v = document.createElement("video");
-        v.dataset.index = i;
-        v.loop = true;
-        v.muted = true; v.defaultMuted = true;
-        v.playsInline = true;
-        v.setAttribute("playsinline", "");
-        v.setAttribute("webkit-playsinline", "");
-        v.setAttribute("muted", "");
-        v.preload = "none";
-
         const poster = makePoster(src);
-
-        // Réaffiche la vignette dès que la vidéo n'a pas d'image stable
-        // (pause, mise en mémoire tampon, ET la boucle qui repart -> 'seeking')
-        const show = () => poster.classList.remove("hidden");
-        v.addEventListener("pause", show);
-        v.addEventListener("waiting", show);
-        v.addEventListener("seeking", show);
-        // Cache la vignette PILE quand une vraie image est rendue à l'écran
-        if ("requestVideoFrameCallback" in HTMLVideoElement.prototype) {
-          const onFrame = () => { if (!v.paused) poster.classList.add("hidden"); v.requestVideoFrameCallback(onFrame); };
-          v.requestVideoFrameCallback(onFrame);
-        } else {
-          v.addEventListener("timeupdate", () => { if (!v.paused && v.currentTime > 0.02) poster.classList.add("hidden"); });
-        }
-
-        slide.appendChild(v);
         slide.appendChild(poster);
         feed.appendChild(slide);
-        slides.push({ video: v, poster: poster });
+        slides.push({ el: slide, poster: poster });
         srcs[i] = src;
       });
 
-      // Clone du BAS = première vidéo (pour boucler 8 -> 1)
       const botClone = document.createElement("div");
       botClone.className = "slide";
       botClone.dataset.clone = "bottom";
@@ -226,50 +220,33 @@
       }
     }
 
-    function setWindow(index) {
-      slides.forEach((s, i) => {
-        const near = Math.abs(i - index) <= WINDOW;
-        if (near && !s.video.src) {
-          s.video.preload = "auto";
-          s.video.src = srcs[i];
-          s.video.load();
-        } else if (!near && s.video.src) {
-          s.video.pause();
-          s.video.removeAttribute("src");
-          s.video.load();
-          s.poster.classList.remove("hidden");
-        }
-      });
-    }
-
     function playActive() {
-      const v = slides[current].video;
-      v.muted = !started;
-      const p = v.play();
+      player.muted = !started;
+      const p = player.play();
       if (p) p.catch(() => {});
     }
 
     function setActive(index) {
-      if (index === current) { if (started && slides[index].video.paused) playActive(); return; }
-      const prev = slides[current].video;
-      prev.pause();
-      try { prev.currentTime = 0; } catch (e) {}
-      slides[current].poster.classList.remove("hidden");
-
-      current = index;
-      setWindow(index);
-      if (started) {
-        const v = slides[index].video;
-        if (v.readyState >= 2) playActive();
-        else v.addEventListener("loadeddata", playActive, { once: true });
+      const slide = slides[index];
+      if (!slide) return;
+      if (index === current && player.parentElement === slide.el) {
+        if (started && player.paused) playActive();
+        return;
       }
+      showCurrentPoster();                 // la slide qu'on quitte réaffiche sa vignette
+      current = index;
+      slide.poster.classList.remove("hidden");
+      if (player.parentElement !== slide.el) slide.el.appendChild(player);
+      if (player.getAttribute("src") !== srcs[index]) {
+        player.src = srcs[index];
+        player.load();
+      }
+      if (started) playActive(); else player.pause();
     }
 
-    // Téléport instantané pour la boucle infinie (les clones sont identiques aux
-    // vignettes des vraies vidéos -> le saut est invisible).
     function goToReal(index) {
       teleporting = true;
-      feed.scrollTop = (index + 1) * H();   // +1 car le clone du haut occupe la position 0
+      feed.scrollTop = (index + 1) * H();
       setActive(index);
       requestAnimationFrame(() => { teleporting = false; });
     }
@@ -296,10 +273,7 @@
       if (started || !ready) return;
       started = true;
       splash.classList.add("hide");
-      setWindow(current);
-      const v = slides[current].video;
-      if (v.readyState >= 2) playActive();
-      else v.addEventListener("loadeddata", playActive, { once: true });
+      playActive();
     }
     splash.addEventListener("click", start);
     splash.addEventListener("touchend", start, { passive: true });
@@ -314,11 +288,10 @@
       const list = await loadManifest();
       if (!list.length) { splash.style.display = "none"; emptyMsg.style.display = "flex"; return; }
       buildFeed(list);
-      // place le scroll sur la 1re vraie vidéo (après le clone du haut)
       requestAnimationFrame(() => { feed.scrollTop = H(); });
       setupObserver();
       await preloadAll(list);
-      setWindow(0);
+      setActive(0);            // place la vidéo unique sur la 1re slide (en pause)
       ready = true;
       splash.classList.remove("loading");
     })();
