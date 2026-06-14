@@ -24,10 +24,7 @@
        l'app gym) -> descend jusqu'au bord du bas, dans la zone de l'indicateur
        home, là où 100dvh s'arrête. C'est ça qui supprime la bande noire. */
     #feed {
-      position: fixed; top: 0; left: 0; right: 0;
-      /* hauteur = écran + safe-area du bas : le conteneur lui-même déborde dans
-         la zone de l'indicateur home (sinon il rogne la vidéo qui dépasse) */
-      height: calc(100% + env(safe-area-inset-bottom, 0px));
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;   /* ancré aux 4 bords comme la navbar gym */
       overflow-y: scroll;
       scroll-snap-type: y mandatory;
       overscroll-behavior: none;
@@ -43,13 +40,8 @@
       overflow: hidden;
     }
     .slide .poster, #player {
-      position: absolute;
-      left: 0; right: 0;
-      /* déborde dans les safe-areas haut ET bas (zone notch + indicateur home)
-         pour qu'il n'y ait jamais de bande noire, quitte à rogner un poil */
-      top: calc(-1 * env(safe-area-inset-top, 0px));
-      width: 100%;
-      height: calc(100% + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px));
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
       object-fit: cover;
     }
     /* UNE seule vidéo, déplacée sur la slide active, sous la vignette */
