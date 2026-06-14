@@ -31,17 +31,28 @@
     }
     #feed::-webkit-scrollbar { display: none; }
     .slide {
+      position: relative;
       height: 100dvh; width: 100%;
       scroll-snap-align: start; scroll-snap-stop: always;
       background: #000;
+      overflow: hidden;
     }
     @media all and (display-mode: standalone), all and (display-mode: fullscreen) {
       #feed, .slide { height: 100vh; }
     }
-    .slide video {
+    .slide video, .slide .poster {
+      position: absolute; inset: 0;
       width: 100%; height: 100%;
-      object-fit: cover; background: #000; display: block;
+      object-fit: cover;
     }
+    .slide video { z-index: 1; background: transparent; display: block; }
+    /* L'image fixe est AU-DESSUS de la vidéo tant qu'elle ne joue pas -> jamais de noir */
+    .slide .poster {
+      z-index: 2;
+      background: #000 center/cover no-repeat;
+      transition: opacity .25s ease;
+    }
+    .slide .poster.hidden { opacity: 0; }
 
     #splash {
       position: fixed; inset: 0; z-index: 50;
@@ -113,7 +124,9 @@
     const loadbar = document.querySelector("#loadbar > i");
     const loadtext = document.getElementById("loadtext");
 
-    let videos = [];
+    const WINDOW = 1;        // nb de vidéos chargées de chaque côté (max 3 au total)
+    let slides = [];         // { video, poster }
+    let blobUrls = [];       // sources locales (téléchargées une fois)
     let started = false;
     let ready = false;
     let current = 0;
@@ -126,25 +139,6 @@
       } catch (e) { return []; }
     }
 
-    function buildFeed(list) {
-      list.forEach((src, i) => {
-        const slide = document.createElement("div");
-        slide.className = "slide";
-        const v = document.createElement("video");
-        v.dataset.index = i;
-        v.loop = true;
-        v.muted = true; v.defaultMuted = true;
-        v.playsInline = true;
-        v.setAttribute("playsinline", "");
-        v.setAttribute("webkit-playsinline", "");
-        v.setAttribute("muted", "");
-        v.preload = "auto";
-        slide.appendChild(v);
-        feed.appendChild(slide);
-        videos.push(v);
-      });
-    }
-
     function once(el, ev, timeout) {
       return new Promise((resolve) => {
         let done = false;
@@ -154,38 +148,69 @@
       });
     }
 
-    // Préparation (derrière l'écran d'accueil), UNE vidéo à la fois pour ne pas
-    // saturer le décodeur de l'iPhone :
-    //  1) télécharge la vidéo en entier (blob, en mémoire)
-    //  2) capture sa 1re image et la fixe comme POSTER
-    // -> au scroll, le poster s'affiche instantanément à la place du noir,
-    //    et comme c'est la 1re image exacte, la transition est invisible.
+    function buildFeed(list) {
+      list.forEach((src, i) => {
+        const slide = document.createElement("div");
+        slide.className = "slide";
+
+        const v = document.createElement("video");
+        v.dataset.index = i;
+        v.loop = true;
+        v.muted = true; v.defaultMuted = true;
+        v.playsInline = true;
+        v.setAttribute("playsinline", "");
+        v.setAttribute("webkit-playsinline", "");
+        v.setAttribute("muted", "");
+        v.preload = "none";        // on contrôle nous-mêmes le chargement (fenêtrage)
+
+        const poster = document.createElement("div");
+        poster.className = "poster";
+
+        // Quand la vidéo JOUE vraiment, on masque l'image fixe -> on voit la vidéo.
+        // Sinon (pause / chargement / déchargée), l'image fixe reste -> jamais de noir.
+        v.addEventListener("playing", () => poster.classList.add("hidden"));
+        v.addEventListener("pause", () => poster.classList.remove("hidden"));
+        v.addEventListener("waiting", () => poster.classList.remove("hidden"));
+
+        slide.appendChild(v);
+        slide.appendChild(poster);
+        feed.appendChild(slide);
+        slides.push({ video: v, poster: poster });
+      });
+    }
+
+    // PRÉPARATION (derrière l'écran d'accueil), une vidéo à la fois avec UN SEUL
+    // décodeur temporaire -> on ne sature jamais l'iPhone :
+    //  - télécharge chaque vidéo en mémoire (blob)
+    //  - capture sa 1re image -> image fixe (poster) de la slide
     async function prepareAll(list) {
+      const tmp = document.createElement("video");
+      tmp.muted = true; tmp.playsInline = true;
+      tmp.setAttribute("playsinline", ""); tmp.setAttribute("muted", "");
       const canvas = document.createElement("canvas");
       const ctx = canvas.getContext("2d");
+
       for (let i = 0; i < list.length; i++) {
-        const v = videos[i];
-        let url;
         try {
           const r = await fetch(list[i], { cache: "force-cache" });
-          url = URL.createObjectURL(await r.blob());
-        } catch (e) { url = list[i]; }
+          blobUrls[i] = URL.createObjectURL(await r.blob());
+        } catch (e) { blobUrls[i] = list[i]; }
 
-        v.src = url;
-        v.load();
-        await once(v, "loadeddata", 4000);
         try {
-          v.currentTime = 0.05;
-          await once(v, "seeked", 1500);
-          if (v.videoWidth) {
-            canvas.width = v.videoWidth;
-            canvas.height = v.videoHeight;
-            ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
-            v.poster = canvas.toDataURL("image/jpeg", 0.85);
+          tmp.src = blobUrls[i];
+          tmp.load();
+          await once(tmp, "loadeddata", 5000);
+          tmp.currentTime = 0.05;
+          await once(tmp, "seeked", 2000);
+          if (tmp.videoWidth) {
+            canvas.width = tmp.videoWidth;
+            canvas.height = tmp.videoHeight;
+            ctx.drawImage(tmp, 0, 0, canvas.width, canvas.height);
+            slides[i].poster.style.backgroundImage = "url(" + canvas.toDataURL("image/jpeg", 0.85) + ")";
           }
-          v.currentTime = 0;
         } catch (e) {}
-        v.pause();
+        tmp.removeAttribute("src");
+        tmp.load();
 
         const pct = Math.round((i + 1) / list.length * 100);
         loadbar.style.width = pct + "%";
@@ -193,24 +218,45 @@
       }
     }
 
-    function ensurePlay(v) {
-      const go = () => { const p = v.play(); if (p) p.catch(() => {}); };
-      if (v.readyState >= 2) go();
-      else v.addEventListener("loadeddata", go, { once: true });
+    // Fenêtrage : seules current ± WINDOW vidéos gardent leur source, les autres
+    // sont déchargées (src retirée) -> on respecte la limite de l'iPhone.
+    function setWindow(index) {
+      slides.forEach((s, i) => {
+        const near = Math.abs(i - index) <= WINDOW;
+        if (near && !s.video.src) {
+          s.video.src = blobUrls[i];
+          s.video.load();
+        } else if (!near && s.video.src) {
+          s.video.pause();
+          s.video.removeAttribute("src");
+          s.video.load();
+          s.poster.classList.remove("hidden");
+        }
+      });
+    }
+
+    function playActive() {
+      const v = slides[current].video;
+      v.muted = !started;
+      const p = v.play();
+      if (p) p.catch(() => {});
     }
 
     function setActive(index) {
-      if (index === current && started && !videos[index].paused) return;
       const changed = index !== current;
+      if (changed) {
+        const prev = slides[current].video;
+        prev.pause();
+        try { prev.currentTime = 0; } catch (e) {}
+        slides[current].poster.classList.remove("hidden");
+      }
       current = index;
-      videos.forEach((v, i) => {
-        if (i === index) {
-          v.muted = !started;
-          if (started) ensurePlay(v);
-        } else if (changed) {
-          v.pause();
-        }
-      });
+      setWindow(index);
+      if (started) {
+        const v = slides[index].video;
+        if (v.readyState >= 2) playActive();
+        else v.addEventListener("loadeddata", playActive, { once: true });
+      }
     }
 
     function setupObserver() {
@@ -220,18 +266,21 @@
           if (e.isIntersecting && (!best || e.intersectionRatio > best.intersectionRatio)) best = e;
         });
         if (best && best.intersectionRatio >= 0.55) {
-          setActive(Number(best.target.firstChild.dataset.index));
+          const idx = Number(best.target.querySelector("video").dataset.index);
+          if (idx !== current) setActive(idx);
         }
       }, { threshold: [0.55, 0.9] });
-      document.querySelectorAll(".slide").forEach((s) => io.observe(s));
+      slides.forEach((s) => io.observe(s.video.parentElement));
     }
 
     function start() {
       if (started || !ready) return;
       started = true;
       splash.classList.add("hide");
-      const v = videos[current];
-      if (v) { v.muted = false; ensurePlay(v); }
+      setWindow(current);
+      const v = slides[current].video;
+      if (v.readyState >= 2) playActive();
+      else v.addEventListener("loadeddata", playActive, { once: true });
     }
     splash.addEventListener("click", start);
     splash.addEventListener("touchend", start, { passive: true });
@@ -248,7 +297,8 @@
       if (!list.length) { splash.style.display = "none"; emptyMsg.style.display = "flex"; return; }
       buildFeed(list);
       setupObserver();
-      await prepareAll(list);     // tout télécharger + capturer les posters
+      await prepareAll(list);
+      setWindow(0);           // charge seulement les 1res vidéos
       ready = true;
       splash.classList.remove("loading");
     })();
