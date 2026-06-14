@@ -13,7 +13,7 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
       height: 100%;
-      background: #ff00ff;   /* TEST diagnostic : repère la zone non couverte */
+      background: #00ffff;   /* TEST: body=cyan */
       overflow: hidden;
       overscroll-behavior: none;
       -webkit-tap-highlight-color: transparent;
@@ -123,16 +123,17 @@
     (function debug() {
       const d = document.getElementById("dbg");
       function up() {
-        const probe = document.getElementById("probe");
         const f = document.getElementById("feed");
-        const vv = window.visualViewport;
+        const slide = f.querySelector(".slide");
+        const pl = document.getElementById("player");
+        const r = (e) => e ? Math.round(e.getBoundingClientRect().bottom) : "?";
         d.textContent =
           "innerH=" + window.innerHeight +
-          "\nscreenH=" + screen.height +
-          "\nvisualVP=" + (vv ? Math.round(vv.height) : "?") +
-          "\nsafe-bottom=" + getComputedStyle(probe).height +
-          "\nfeedH=" + f.getBoundingClientRect().height +
-          "\ndpr=" + window.devicePixelRatio +
+          " screenH=" + screen.height +
+          "\nfeed.bottom=" + r(f) +
+          "\nslide.bottom=" + r(slide) +
+          "\nplayer.bottom=" + (pl ? r(pl) : "no-player") +
+          "\nplayer.parent=" + (pl && pl.parentElement ? (pl.parentElement.dataset.index ?? pl.parentElement.className) : "?") +
           "\nstandalone=" + (navigator.standalone === true);
       }
       up(); setInterval(up, 500);
