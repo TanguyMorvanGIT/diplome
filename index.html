@@ -22,7 +22,7 @@
     }
     #feed {
       position: fixed; inset: 0;     /* ancré aux 4 bords -> remplit tout l'écran */
-      height: 100%;
+      height: var(--app-height, 100%);
       overflow-y: scroll;
       scroll-snap-type: y mandatory;
       overscroll-behavior-y: contain;
@@ -32,7 +32,7 @@
     #feed::-webkit-scrollbar { display: none; }
     .slide {
       position: relative;
-      height: 100%; width: 100%;     /* = hauteur réelle de l'écran, sans bande noire */
+      height: var(--app-height, 100%); width: 100%;   /* hauteur réelle écran, sans bande noire */
       scroll-snap-align: start; scroll-snap-stop: always;
       background: #000;
       overflow: hidden;
@@ -114,6 +114,16 @@
   <div id="empty">Aucune vidéo trouvée dans <b>videos/</b>.</div>
 
   <script>
+    // Mesure la hauteur réelle de l'écran (la plus fiable sur iOS) et la
+    // réapplique au conteneur -> remplit jusqu'en bas, sans bande noire.
+    function setAppHeight() {
+      const h = window.innerHeight;
+      document.documentElement.style.setProperty("--app-height", h + "px");
+    }
+    setAppHeight();
+    window.addEventListener("resize", setAppHeight);
+    window.addEventListener("orientationchange", () => setTimeout(setAppHeight, 200));
+
     const feed = document.getElementById("feed");
     const splash = document.getElementById("splash");
     const emptyMsg = document.getElementById("empty");
