@@ -46,11 +46,12 @@
       object-fit: cover;
     }
     .slide video { z-index: 1; background: transparent; display: block; }
-    /* L'image fixe est AU-DESSUS de la vidéo tant qu'elle ne joue pas -> jamais de noir */
+    /* Vraie vignette (1re image du fichier) AU-DESSUS de la vidéo tant qu'elle ne
+       joue pas -> jamais de noir. Disparait pile quand la vidéo démarre. */
     .slide .poster {
       z-index: 2;
-      background: #000 center/cover no-repeat;
-      transition: opacity .25s ease;
+      background-position: center; background-size: cover; background-repeat: no-repeat;
+      transition: opacity .2s ease;
     }
     .slide .poster.hidden { opacity: 0; }
 
@@ -124,9 +125,9 @@
     const loadbar = document.querySelector("#loadbar > i");
     const loadtext = document.getElementById("loadtext");
 
-    const WINDOW = 1;        // nb de vidéos chargées de chaque côté (max 3 au total)
+    const WINDOW = 1;        // vidéos chargées de chaque côté (max 3 -> limite iPhone)
     let slides = [];         // { video, poster }
-    let blobUrls = [];       // sources locales (téléchargées une fois)
+    let srcs = [];           // URL finale de chaque vidéo (blob si préchargée)
     let started = false;
     let ready = false;
     let current = 0;
@@ -139,13 +140,9 @@
       } catch (e) { return []; }
     }
 
-    function once(el, ev, timeout) {
-      return new Promise((resolve) => {
-        let done = false;
-        const h = () => { if (done) return; done = true; el.removeEventListener(ev, h); resolve(); };
-        el.addEventListener(ev, h);
-        if (timeout) setTimeout(h, timeout);
-      });
+    function posterUrl(src) {
+      // videos/01_video.mp4 -> posters/01.jpg
+      return src.replace("videos/", "posters/").replace(/_video\.mp4$/i, ".jpg");
     }
 
     function buildFeed(list) {
@@ -161,13 +158,13 @@
         v.setAttribute("playsinline", "");
         v.setAttribute("webkit-playsinline", "");
         v.setAttribute("muted", "");
-        v.preload = "none";        // on contrôle nous-mêmes le chargement (fenêtrage)
+        v.preload = "none";
 
         const poster = document.createElement("div");
         poster.className = "poster";
+        poster.style.backgroundImage = "url('" + posterUrl(src) + "')";
 
-        // Quand la vidéo JOUE vraiment, on masque l'image fixe -> on voit la vidéo.
-        // Sinon (pause / chargement / déchargée), l'image fixe reste -> jamais de noir.
+        // La vidéo joue -> on cache la vignette. Sinon la vignette reste -> jamais de noir.
         v.addEventListener("playing", () => poster.classList.add("hidden"));
         v.addEventListener("pause", () => poster.classList.remove("hidden"));
         v.addEventListener("waiting", () => poster.classList.remove("hidden"));
@@ -176,55 +173,35 @@
         slide.appendChild(poster);
         feed.appendChild(slide);
         slides.push({ video: v, poster: poster });
+        srcs[i] = src;        // par défaut : URL réseau (sera remplacée par le blob)
       });
     }
 
-    // PRÉPARATION (derrière l'écran d'accueil), une vidéo à la fois avec UN SEUL
-    // décodeur temporaire -> on ne sature jamais l'iPhone :
-    //  - télécharge chaque vidéo en mémoire (blob)
-    //  - capture sa 1re image -> image fixe (poster) de la slide
-    async function prepareAll(list) {
-      const tmp = document.createElement("video");
-      tmp.muted = true; tmp.playsInline = true;
-      tmp.setAttribute("playsinline", ""); tmp.setAttribute("muted", "");
-      const canvas = document.createElement("canvas");
-      const ctx = canvas.getContext("2d");
-
+    // Précharge en mémoire : vignettes (instantanées) + vidéos entières (lecture
+    // 100% locale ensuite, aucun risque de coupure réseau pendant l'expo).
+    async function preloadAll(list) {
+      // vignettes d'abord (toutes petites)
+      await Promise.all(list.map((src) => new Promise((res) => {
+        const img = new Image(); img.onload = img.onerror = res; img.src = posterUrl(src);
+      })));
+      // puis les vidéos, une par une, avec progression
       for (let i = 0; i < list.length; i++) {
         try {
           const r = await fetch(list[i], { cache: "force-cache" });
-          blobUrls[i] = URL.createObjectURL(await r.blob());
-        } catch (e) { blobUrls[i] = list[i]; }
-
-        try {
-          tmp.src = blobUrls[i];
-          tmp.load();
-          await once(tmp, "loadeddata", 5000);
-          tmp.currentTime = 0.05;
-          await once(tmp, "seeked", 2000);
-          if (tmp.videoWidth) {
-            canvas.width = tmp.videoWidth;
-            canvas.height = tmp.videoHeight;
-            ctx.drawImage(tmp, 0, 0, canvas.width, canvas.height);
-            slides[i].poster.style.backgroundImage = "url(" + canvas.toDataURL("image/jpeg", 0.85) + ")";
-          }
-        } catch (e) {}
-        tmp.removeAttribute("src");
-        tmp.load();
-
+          srcs[i] = URL.createObjectURL(await r.blob());
+        } catch (e) { /* on garde l'URL réseau en repli */ }
         const pct = Math.round((i + 1) / list.length * 100);
         loadbar.style.width = pct + "%";
         loadtext.textContent = "Préparation… " + pct + "%";
       }
     }
 
-    // Fenêtrage : seules current ± WINDOW vidéos gardent leur source, les autres
-    // sont déchargées (src retirée) -> on respecte la limite de l'iPhone.
+    // Seules current ± WINDOW vidéos gardent leur source (limite iPhone respectée)
     function setWindow(index) {
       slides.forEach((s, i) => {
         const near = Math.abs(i - index) <= WINDOW;
         if (near && !s.video.src) {
-          s.video.src = blobUrls[i];
+          s.video.src = srcs[i];
           s.video.load();
         } else if (!near && s.video.src) {
           s.video.pause();
@@ -243,13 +220,12 @@
     }
 
     function setActive(index) {
-      const changed = index !== current;
-      if (changed) {
-        const prev = slides[current].video;
-        prev.pause();
-        try { prev.currentTime = 0; } catch (e) {}
-        slides[current].poster.classList.remove("hidden");
-      }
+      if (index === current) return;
+      const prev = slides[current].video;
+      prev.pause();
+      try { prev.currentTime = 0; } catch (e) {}
+      slides[current].poster.classList.remove("hidden");
+
       current = index;
       setWindow(index);
       if (started) {
@@ -265,11 +241,10 @@
         entries.forEach((e) => {
           if (e.isIntersecting && (!best || e.intersectionRatio > best.intersectionRatio)) best = e;
         });
-        if (best && best.intersectionRatio >= 0.55) {
-          const idx = Number(best.target.querySelector("video").dataset.index);
-          if (idx !== current) setActive(idx);
+        if (best && best.intersectionRatio >= 0.5) {
+          setActive(Number(best.target.querySelector("video").dataset.index));
         }
-      }, { threshold: [0.55, 0.9] });
+      }, { threshold: [0.5, 0.9] });
       slides.forEach((s) => io.observe(s.video.parentElement));
     }
 
@@ -297,8 +272,8 @@
       if (!list.length) { splash.style.display = "none"; emptyMsg.style.display = "flex"; return; }
       buildFeed(list);
       setupObserver();
-      await prepareAll(list);
-      setWindow(0);           // charge seulement les 1res vidéos
+      await preloadAll(list);
+      setWindow(0);
       ready = true;
       splash.classList.remove("loading");
     })();
