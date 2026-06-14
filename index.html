@@ -13,7 +13,7 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
       height: 100%;
-      background: #00ffff;   /* TEST: body=cyan */
+      background: #000;
       overflow: hidden;
       overscroll-behavior: none;
       -webkit-tap-highlight-color: transparent;
@@ -37,7 +37,7 @@
       position: relative;
       height: 100vh; width: 100%;
       scroll-snap-align: start; scroll-snap-stop: always;
-      background: #ff00ff;   /* TEST diagnostic */
+      background: #000;
       overflow: hidden;
     }
     .slide .poster, #player {
@@ -54,7 +54,7 @@
     .slide .poster.hidden { opacity: 0; }
 
     #splash {
-      position: fixed; inset: 0; z-index: 50;
+      position: fixed; top: 0; left: 0; right: 0; height: 100vh; z-index: 50;
       background: #000; color: #fff;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center; gap: 26px;
@@ -82,7 +82,7 @@
     #loadbar > i { display: block; height: 100%; width: 0%; background: #fff; transition: width .2s ease; }
 
     #empty {
-      position: fixed; inset: 0; z-index: 40; color: #fff; display: none;
+      position: fixed; top: 0; left: 0; right: 0; height: 100vh; z-index: 40; color: #fff; display: none;
       align-items: center; justify-content: center; text-align: center;
       padding: 24px; line-height: 1.5; opacity: .85;
     }
@@ -104,8 +104,6 @@
 <body>
   <div id="feed"></div>
   <button id="updateBtn">↻ Mise à jour</button>
-  <div id="dbg" style="position:fixed;left:8px;bottom:8px;z-index:9999;background:rgba(0,0,0,.8);color:#0f0;font:12px monospace;padding:8px;border-radius:6px;white-space:pre;pointer-events:none"></div>
-  <div id="probe" style="position:fixed;bottom:0;height:env(safe-area-inset-bottom,0px);width:1px;"></div>
 
   <div id="splash" class="loading">
     <div class="play"></div>
@@ -119,25 +117,6 @@
   <div id="empty">Aucune vidéo trouvée dans <b>videos/</b>.</div>
 
   <script>
-    // DEBUG : affiche les vraies dimensions de l'iPhone
-    (function debug() {
-      const d = document.getElementById("dbg");
-      function up() {
-        const pl = document.getElementById("player");
-        const par = pl ? pl.parentElement : null;
-        const rb = (e) => e ? Math.round(e.getBoundingClientRect().bottom) : "?";
-        const rt = (e) => e ? Math.round(e.getBoundingClientRect().top) : "?";
-        d.textContent =
-          "screenH=" + screen.height + " innerH=" + window.innerHeight +
-          "\nplayer top=" + rt(pl) + " bottom=" + rb(pl) +
-          "\nactiveSlide top=" + rt(par) + " bottom=" + rb(par) +
-          "\nobject-fit=" + (pl ? getComputedStyle(pl).objectFit : "?") +
-          "\nvideo=" + (pl ? pl.videoWidth + "x" + pl.videoHeight : "?") +
-          "\npaused=" + (pl ? pl.paused : "?");
-      }
-      up(); setInterval(up, 500);
-    })();
-
     const feed = document.getElementById("feed");
     const splash = document.getElementById("splash");
     const emptyMsg = document.getElementById("empty");
